@@ -13,9 +13,11 @@ class ProguardMap(object):
 
     CLASS_MAPPING = re.compile(r'^((%s)(\.%s)*) -> ((%s)(\.%s)*):$' % (JAVA_ID, JAVA_ID, JAVA_ID, JAVA_ID))
     METHOD_MAPPING = re.compile(r'^(\d+):(\d+):.* (%s)\(.*\) -> (%s)$' % (JAVA_ID, JAVA_ID))
-    OBFUSCATED_METHOD_REFERENCE = re.compile(r'((%s(\.%s)+)\.(%s))\((.*)\)' % (JAVA_ID, JAVA_ID, JAVA_ID))
+    OBFUSCATED_METHOD_REFERENCE_STACK_TRACE = re.compile(r'((%s(\.%s)+)\.(%s))\((.*)\)' % (JAVA_ID, JAVA_ID, JAVA_ID))
+    OBFUSCATED_METHOD_REFERENCE_LOGGER = re.compile(r'\[((%s(\.%s)+)\.(%s)):(.*)\]' % (JAVA_ID, JAVA_ID, JAVA_ID))
     OBFUSCATED_CLASS_REFERENCE = re.compile(r'%s(\.%s)+' % (JAVA_ID, JAVA_ID))
-    SOURCE_LINE_INFO = re.compile(r'SourceFile:(\d+)')
+    SOURCE_LINE_INFO_STACK_TRACE = re.compile(r'SourceFile:(\d+)')
+    SOURCE_LINE_INFO_LOGGER = re.compile(r'(\d+)')
 
     def __init__(self, map_file_name, verbose=False):
         """
@@ -30,7 +32,10 @@ class ProguardMap(object):
 
     def deobfuscate_line(self, line):
         """ Tries to find and replace all the references to obfuscated names in a text string """
-        mi = self.OBFUSCATED_METHOD_REFERENCE.finditer(line.strip())
+        mi = self.OBFUSCATED_METHOD_REFERENCE_STACK_TRACE.finditer(line.strip())
+        for m in mi:
+            line = self.__process_method(line, m)
+        mi = self.OBFUSCATED_METHOD_REFERENCE_LOGGER.finditer(line.strip())
         for m in mi:
             line = self.__process_method(line, m)
         mi = self.OBFUSCATED_CLASS_REFERENCE.finditer(line.strip())
@@ -68,11 +73,15 @@ class ProguardMap(object):
         return result
 
     def __extract_source_line(self, line_info):
-        m = self.SOURCE_LINE_INFO.match(line_info)
+        m = self.SOURCE_LINE_INFO_STACK_TRACE.match(line_info)
         if m is not None:
             return int(m.group(1))
         else:
-            return -1
+            m = self.SOURCE_LINE_INFO_LOGGER.match(line_info)
+            if m is not None:
+                return int(m.group(1))
+            else:
+                return -1
 
     @staticmethod
     def __get_method_name(class_map, obfuscated_method_name, source_line):
